@@ -59,7 +59,9 @@ def main():
     date_fmt = config.file_date_format 
     
     # 2. 扫描测试集目录
-    root_path = os.path.join(config.root_path, "CP", "TestSet")
+    test_set_name = "TestSetB"
+    root_path = os.path.join(config.root_path, "CP", test_set_name)
+    
     # 假设 scan_directory 返回 case_id 列表
     case_ids = scan_directory(root_path, 2, return_full_path=False)
     
@@ -74,12 +76,12 @@ def main():
     # 复制一份列表进行迭代，避免修改原列表（虽然这里没修改）
     for case_id in case_ids[:]:
         # 创建 Case 对象 (is_train=False 表示测试集模式)
-        case = MetCase.create(case_id, config, is_train=False, test_set="TestSet")
+        case = MetCase.create(case_id, config, is_train=False, test_set=test_set_name)
         
         # [核心修改 1] 获取所有 RA 标签文件
         # MetCase._load_files 默认按文件名排序返回 (这里调用内部方法或通过属性访问)
         # 注意：这里我们使用 MetCase 中定义的 _load_files 方法，参数需对应
-        all_label_files = case._load_files("LABEL", MetLabel.RA.name, return_full_path=False)
+        all_label_files = case._load_label_files(MetLabel.RA, return_full_path=False)
         
         # [核心修改 2] 校验文件数量，取最后 10 帧
         if len(all_label_files) < 10:

@@ -26,19 +26,19 @@ class MetSample:
     sample_id: str
     timestamps: List[str]
     met_config: MetConfig
-    is_debug: bool = field(default_factory=lambda: False)
     is_train: bool = field(default_factory=lambda: True)
-    test_set: str = field(default_factory=lambda: "TestSet")
+    test_set: str = field(default_factory=lambda: "TestSetB")
+    
+
+    in_seq_length: int = field(default_factory=lambda: 10)
+    out_seq_length: int = field(default_factory=lambda: 20)
     
     channels: List[Union[MetLabel, MetRadar, MetNwp, MetGis]] = field(
         default_factory=lambda: _DEFAULT_CHANNELS.copy()
     )
     channel_size: int = field(default_factory=lambda: len(_DEFAULT_CHANNELS))
     
-    task_mode: str = field(default_factory=lambda: 'precipitation')
     default_shape: Tuple[int, int] = field(default_factory=lambda: (301, 301))
-    max_timesteps: int = field(default_factory=lambda: 10)
-    out_timesteps: int = field(default_factory=lambda: 20)
 
     _gis_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = field(default_factory=dict, init=False, repr=False)
     _sample_id_parts: Optional[List[str]] = field(default=None, init=False, repr=False)
@@ -46,12 +46,7 @@ class MetSample:
     @classmethod
     def create(cls, sample_id: str, timestamps: List[str], config: Optional['MetConfig'] = None, **kwargs) -> 'MetSample':
         if config is None:
-            config = get_config(is_debug=kwargs.get('is_debug', False))
-        
-        if 'is_debug' in kwargs:
-            config.is_debug = kwargs['is_debug']
-        else:
-            kwargs['is_debug'] = config.is_debug
+            config = get_config()
 
         return cls(
             sample_id=sample_id,
@@ -121,10 +116,6 @@ class MetSample:
         return self.met_config.nwp_prefix
     
     @property
-    def user_id(self) -> str:
-        return self.met_config.user_id
-    
-    @property
     def metadata(self) -> Dict:
         metadata_dict = vars(self).copy()
         metadata_dict.pop('_gis_cache', None)
@@ -140,7 +131,7 @@ class MetSample:
         """[新增] 强制确保数据尺寸符合 default_shape (301, 301)"""
         # [Fix] 增加对空数组的防御性检查
         if data is None or data.size == 0 or 0 in data.shape:
-             return np.zeros(self.default_shape, dtype=np.float32), np.zeros(self.default_shape, dtype=bool)
+            return np.zeros(self.default_shape, dtype=np.float32), np.zeros(self.default_shape, dtype=bool)
 
         if data.shape != self.default_shape:
             # cv2.resize expects (width, height), which is (W, H)
@@ -191,9 +182,9 @@ class MetSample:
             return default_data, default_mask
     
     def load_input_data(self) -> Tuple[np.ndarray, np.ndarray]:
-        past_timesteps = self.timestamps[:self.max_timesteps] 
-        future_start = self.max_timesteps
-        future_end = future_start + self.out_timesteps
+        past_timesteps = self.timestamps[:self.in_seq_length] 
+        future_start = self.in_seq_length
+        future_end = future_start + self.out_seq_length
         future_timesteps = self.timestamps[future_start:future_end]
         
         self._preload_gis_data()
@@ -218,7 +209,7 @@ class MetSample:
         # --- B. 加载未来 NWP 引导 ---
         nwp_channels = [c for c in self.channels if isinstance(c, MetNwp)]
         
-        if len(nwp_channels) > 0 and len(future_timesteps) == self.out_timesteps:
+        if len(nwp_channels) > 0 and len(future_timesteps) == self.out_seq_length:
             future_nwp_series = []
             future_nwp_masks = []
             
@@ -237,11 +228,11 @@ class MetSample:
             mask_future_nwp = np.stack(future_nwp_masks, axis=0)
             
             B_t, C_n, H_t, W_t = input_future_nwp.shape
-            fold_factor = self.out_timesteps // self.max_timesteps
+            fold_factor = self.out_seq_length // self.in_seq_length
             
-            if self.out_timesteps % self.max_timesteps == 0:
-                input_folded = input_future_nwp.reshape(self.max_timesteps, fold_factor * C_n, H_t, W_t)
-                mask_folded = mask_future_nwp.reshape(self.max_timesteps, fold_factor * C_n, H_t, W_t)
+            if self.out_seq_length % self.in_seq_length == 0:
+                input_folded = input_future_nwp.reshape(self.in_seq_length, fold_factor * C_n, H_t, W_t)
+                mask_folded = mask_future_nwp.reshape(self.in_seq_length, fold_factor * C_n, H_t, W_t)
                 input_data = np.concatenate([input_base, input_folded], axis=1)
                 input_mask = np.concatenate([mask_base, mask_folded], axis=1)
             else:
@@ -257,8 +248,8 @@ class MetSample:
         target_data = []
         valid_mask = []
 
-        start_idx = self.max_timesteps
-        end_idx = start_idx + self.out_timesteps
+        start_idx = self.in_seq_length
+        end_idx = start_idx + self.out_seq_length
         target_timestamps = self.timestamps[start_idx : end_idx]
 
         for timestamp in target_timestamps:
@@ -266,7 +257,7 @@ class MetSample:
                 self.base_path,
                 MetVar.LABEL.name,
                 MetLabel.RA.name,
-                f"CP_Label_{MetLabel.RA.name}_{self.station_id}_{timestamp}.npy"
+                f"{self.task_id}_Label_{MetLabel.RA.name}_{self.station_id}_{timestamp}.npy"
             )
 
             min_val, max_val = self._get_channel_limits(MetLabel.RA)

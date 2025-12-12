@@ -4,7 +4,6 @@ import torch
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F 
-from metai.utils import MLOGI
 from metai.dataset import MetSample
 from metai.utils.met_config import get_config
 
@@ -86,7 +85,7 @@ class ScwdsDataModule(LightningDataModule):
                 self.data_path, 
                 is_train=False
             )
-            MLOGI(f"Infer dataset size: {len(self.infer_dataset)}")
+            print(f"[INFO] Infer dataset size: {len(self.infer_dataset)}")
             return
         
         # 训练/验证/测试模式下，进行数据集分割
@@ -100,7 +99,7 @@ class ScwdsDataModule(LightningDataModule):
             
             # 如果数据集为空或太小，跳过分割
             if total_size == 0:
-                MLOGI("Warning: Dataset is empty, skipping split")
+                print("[WARN] Dataset is empty, skipping split")
                 return
             
             # 计算划分的尺寸
@@ -123,7 +122,7 @@ class ScwdsDataModule(LightningDataModule):
                 self.dataset, lengths, generator=generator
             )
             
-            MLOGI(f"Dataset split: Train={len(self.train_dataset)}, Val={len(self.val_dataset)}, Test={len(self.test_dataset)}")
+            print(f"[INFO] Dataset split: Train={len(self.train_dataset)}, Val={len(self.val_dataset)}, Test={len(self.test_dataset)}")
 
     def _interpolate_batch(self, batch_tensor: torch.Tensor, mode: str = 'bilinear') -> torch.Tensor:
         """
