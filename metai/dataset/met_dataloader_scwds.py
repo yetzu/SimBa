@@ -47,8 +47,8 @@ class ScwdsDataset(Dataset):
                 - metadata (Dict): 样本元数据 (ID, 时间戳等)。
                 - input_data (np.ndarray): 输入序列张量 (T_in, C, H, W)。
                 - target_data (np.ndarray | None): 目标序列张量 (T_out, 1, H, W)。推理模式下为 None。
-                - target_mask (np.ndarray | None): 目标掩码。推理模式下为 None。
                 - input_mask (np.ndarray): 输入掩码。
+                - target_mask (np.ndarray | None): 目标掩码。推理模式下为 None。
         """
         record = self.samples[idx]
         
@@ -186,18 +186,6 @@ class ScwdsDataModule(LightningDataModule):
             
             print(f"[INFO] Dataset split: Train={len(self.train_dataset)}, Val={len(self.val_dataset)}, Test={len(self.test_dataset)}")
 
-    # def _interpolate_batch(self, batch_tensor: torch.Tensor, mode: str = 'bilinear') -> torch.Tensor:
-    #     """
-    #     辅助函数：对 (B, T, C, H, W) 格式的张量进行批量空间插值。
-    #     通常在 Trainer 中调用，用于将数据缩放到模型输入尺寸。
-    #     """
-    #     B, T, C, H, W = batch_tensor.shape
-    #     # 合并 B 和 T 维度以便使用标准的 2D 插值
-    #     batch_tensor = batch_tensor.view(B * T, C, H, W)
-    #     batch_tensor = F.interpolate(batch_tensor, size=self.resize_shape, mode=mode, align_corners=False if mode == 'bilinear' else None)
-    #     # 还原维度
-    #     return batch_tensor.view(B, T, C, *self.resize_shape)
-
     def _collate_fn(self, batch):
         """
         训练/验证/测试用的 Collate 函数。
@@ -216,7 +204,7 @@ class ScwdsDataModule(LightningDataModule):
         target_mask_tensors = []
         input_mask_tensors = []
 
-        for metadata, input_np, target_np, target_mask_np, input_mask_np in batch:
+        for metadata, input_np, target_np, input_mask_np, target_mask_np in batch:
             metadata_batch.append(metadata)
             input_tensors.append(torch.from_numpy(input_np).float())
             target_tensors.append(torch.from_numpy(target_np).float())
@@ -229,7 +217,7 @@ class ScwdsDataModule(LightningDataModule):
         target_mask_batch = torch.stack(target_mask_tensors, dim=0).contiguous()
         input_mask_batch = torch.stack(input_mask_tensors, dim=0).contiguous()
         
-        return metadata_batch, input_batch, target_batch, target_mask_batch, input_mask_batch
+        return metadata_batch, input_batch, target_batch, input_mask_batch, target_mask_batch
 
     def _collate_fn_infer(self, batch):
         """
@@ -245,7 +233,7 @@ class ScwdsDataModule(LightningDataModule):
         input_tensors = []
         input_mask_tensors = []
 
-        for metadata, input_np, _, _, input_mask_np in batch:
+        for metadata, input_np, _, input_mask_np, _ in batch:
             metadata_batch.append(metadata)
             input_tensors.append(torch.from_numpy(input_np).float())
             input_mask_tensors.append(torch.from_numpy(input_mask_np).bool())
