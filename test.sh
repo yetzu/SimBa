@@ -1,0 +1,1 @@
+python -m pytest -q test/test_met_config.py

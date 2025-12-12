@@ -1,0 +1,13 @@
+# MetAI 配置文件
+
+# 路径配置
+root_path: "/data/zjobs/SevereWeather_AI_2025"
+
+# 地理数据路径
+gis_data_path: "/data/zjobs/SevereWeather_AI_2025/dem"
+
+# 文件格式配置
+file_date_format: "%m%d-%H%M"
+
+# NWP文件前缀配置
+nwp_prefix: "RRA"
