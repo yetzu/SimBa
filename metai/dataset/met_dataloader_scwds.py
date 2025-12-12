@@ -1,5 +1,7 @@
+import os
 import json
 from typing import List, Dict, Any, Optional
+import numpy as np
 import torch
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
@@ -26,10 +28,13 @@ class ScwdsDataset(Dataset):
         """
         self.data_path = data_path
         self.config = get_config()
+
         # 加载所有样本元数据
         self.samples = self._load_samples_from_jsonl(data_path)
         self.is_train = is_train
         self.test_set = test_set
+
+        self.npz_dir = "/data/zjobs/SevereWeather_AI_2025/CP/Train"
         
     def __len__(self):
         """返回数据集中的样本总数"""
@@ -51,17 +56,35 @@ class ScwdsDataset(Dataset):
                 - target_mask (np.ndarray | None): 目标掩码。推理模式下为 None。
         """
         record = self.samples[idx]
+        sample_id = record.get("sample_id")
+
+        if self.is_train:
+            npz_path = os.path.join(self.npz_dir, f"{sample_id}.npz")
+            if os.path.exists(npz_path):
+                try:
+                    # 使用 allow_pickle=True 以防万一，尽管我们主要存的是数组
+                    with np.load(npz_path, allow_pickle=True) as data:
+                        input_data = data['input_data']   # Shape: (T, C, 256, 256)
+                        target_data = data['target_data'] # Shape: (T, 1, 256, 256)
+                        target_mask = data['target_mask'] # Shape: (T, 1, 256, 256)
+
+                    # 返回与 to_numpy 一致的五元组
+                    return None, input_data, target_data, None, target_mask
+
+                except Exception as e:
+                    # 如果 NPZ 读取坏了，打印警告并回退到原始加载方式，不中断训练
+                    print(f"[WARNING] NPZ load failed for {sample_id}: {e}.")
         
         # 创建 MetSample 实例来处理具体的文件读取和预处理
         sample = MetSample.create(
-            record.get("sample_id"),
+            sample_id,
             record.get("timestamps"),
             config=self.config,
             is_train=self.is_train,
             test_set=self.test_set
         )
         
-        # 调用 to_numpy 加载实际的数值数据
+        # metadata, input_data, target_data, input_mask, target_mask
         return sample.to_numpy() 
                         
     def _load_samples_from_jsonl(self, file_path: str) -> List[Dict[str, Any]]:
@@ -96,8 +119,6 @@ class ScwdsDataModule(LightningDataModule):
     def __init__(
         self,
         data_path: str = "data/samples.jsonl",
-        resize_shape: tuple[int, int] = (256, 256),
-        aft_seq_length: int = 20,
         batch_size: int = 4,
         num_workers: int = 8,
         pin_memory: bool = True,
@@ -111,8 +132,6 @@ class ScwdsDataModule(LightningDataModule):
 
         Args:
             data_path (str): 样本索引文件路径。
-            resize_shape (tuple): 图片缩放的目标尺寸 (H, W)。
-            aft_seq_length (int): 预测序列长度 (未使用，但在参数列表中保留)。
             batch_size (int): 批大小。
             num_workers (int): DataLoader 的工作线程数。
             pin_memory (bool): 是否将数据固定在 CUDA 内存中。
@@ -123,14 +142,12 @@ class ScwdsDataModule(LightningDataModule):
         """
         super().__init__()
         self.data_path = data_path
-        self.resize_shape = resize_shape
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.train_split = train_split
         self.val_split = val_split
         self.test_split = test_split
         self.pin_memory = pin_memory
-        self.original_shape = (301, 301)
         self.seed = seed
 
     def setup(self, stage: Optional[str] = None):
@@ -147,7 +164,7 @@ class ScwdsDataModule(LightningDataModule):
                 self.data_path, 
                 is_train=False
             )
-            print(f"[INFO] Infer dataset size: {len(self.infer_dataset)}")
+            print(f"[INFO] Infer dataset: {self.infer_dataset.test_set}, size = {len(self.infer_dataset)}")
             return
         
         # --- 训练/验证/测试模式 ---
@@ -198,26 +215,27 @@ class ScwdsDataModule(LightningDataModule):
             target_mask_batch (Tensor): [B, T_out, 1, H, W]
             input_mask_batch (Tensor): [B, T_in, C, H, W]
         """
-        metadata_batch = []
+        # metadata_batch = []
         input_tensors = []
         target_tensors = []
         target_mask_tensors = []
-        input_mask_tensors = []
+        # input_mask_tensors = []
 
-        for metadata, input_np, target_np, input_mask_np, target_mask_np in batch:
-            metadata_batch.append(metadata)
+        # for metadata, input_np, target_np, input_mask_np, target_mask_np in batch:
+        for _, input_np, target_np, _, target_mask_np in batch:
+            # metadata_batch.append(metadata)
             input_tensors.append(torch.from_numpy(input_np).float())
             target_tensors.append(torch.from_numpy(target_np).float())
             target_mask_tensors.append(torch.from_numpy(target_mask_np).bool())
-            input_mask_tensors.append(torch.from_numpy(input_mask_np).bool())
+            # input_mask_tensors.append(torch.from_numpy(input_mask_np).bool())
 
         # 使用 torch.stack 将列表转换为张量，并在维度 0 (Batch) 上堆叠
         input_batch = torch.stack(input_tensors, dim=0).contiguous()
         target_batch = torch.stack(target_tensors, dim=0).contiguous()
         target_mask_batch = torch.stack(target_mask_tensors, dim=0).contiguous()
-        input_mask_batch = torch.stack(input_mask_tensors, dim=0).contiguous()
+        # input_mask_batch = torch.stack(input_mask_tensors, dim=0).contiguous()
         
-        return metadata_batch, input_batch, target_batch, input_mask_batch, target_mask_batch
+        return None, input_batch, target_batch, None, target_mask_batch
 
     def _collate_fn_infer(self, batch):
         """
@@ -252,7 +270,7 @@ class ScwdsDataModule(LightningDataModule):
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
-            shuffle=True, # 训练集需要打乱
+            shuffle=True,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             persistent_workers=True if self.num_workers > 0 else False,
