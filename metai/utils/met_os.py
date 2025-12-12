@@ -14,7 +14,8 @@ def scan_directory(folder_path: str, level: int = 1, return_full_path: bool = Fa
         level: 扫描深度。
             - `level <= 0`: 不展开子目录，仅返回当前目录（见返回值说明）。
             - `level == 1`: 返回当前目录下的直接子目录。
-            - `level > 1`: 递归展开，返回扁平化的子目录列表（所有层级合并为一个列表）。
+            - `level > 1`: 递归展开，返回“恰好第 `level` 层”的子目录列表（扁平列表）。
+              例如：`level=2` 返回二级子目录（孙目录），不包含一级子目录本身。
         return_full_path: 返回值是否包含完整路径。
             - True: 返回完整路径（例如 `/a/b/c`）
             - False: 返回目录名（例如 `c`）

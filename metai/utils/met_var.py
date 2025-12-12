@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Optional, Union, Dict
+from typing import Any, Optional, Dict
 
 
 class MetBaseEnum(str, Enum):

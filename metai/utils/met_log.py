@@ -21,7 +21,7 @@ import logging.handlers
 import threading
 import re
 from datetime import datetime
-from typing import Optional, Union, Any, Dict, List
+from typing import Optional, Any, Dict
 from pathlib import Path
 from contextlib import contextmanager
 from functools import wraps
