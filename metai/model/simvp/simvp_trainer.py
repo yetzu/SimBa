@@ -13,11 +13,8 @@ import lightning as l
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 
 from metai.model.core import get_optim_scheduler, timm_schedulers
-# NOTE:
-# Keep SimVP(mamba) model structure unchanged for checkpoint compatibility.
-# The SimVP-style Mamba model is implemented in this package's `model.py`.
-from .model import SimVP_Model
-from .loss import HybridLoss
+from .simvp_model import SimVP_Model
+from .simvp_loss import HybridLoss
 
 class SimVP(l.LightningModule):
     def __init__(self, **args):
@@ -62,7 +59,6 @@ class SimVP(l.LightningModule):
                 self.test_script_path = 'run.scwds.simvp.sh'
     
     def _build_model(self, config: Dict[str, Any]):
-        # Build the SimVP-style Mamba model for checkpoint compatibility with metai/model/simvp.
         return SimVP_Model(
              in_shape=config.get('in_shape'), hid_S=config.get('hid_S', 128), 
              hid_T=config.get('hid_T', 512), N_S=config.get('N_S', 4), N_T=config.get('N_T', 12),
@@ -144,7 +140,6 @@ class SimVP(l.LightningModule):
         # TensorBoard
         for k, v in weights.items():
             self.log(f"train/weight_{k}", v, on_epoch=True, sync_dist=True)
-
     
     def forward(self, x):
         return self.model(x)

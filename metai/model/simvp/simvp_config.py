@@ -1,53 +1,70 @@
-# metai/model/mamba/config.py
+# metai/model/simvp/simvp_config.py
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Tuple, Literal, Union, List
 
-class ModelConfig(BaseModel):
+class SimVPConfig(BaseModel):
     """
-    模型配置类
+    SimVP 模型配置类 (SOTA 优化版)
     适配 10帧 -> 20帧 预测任务，以及 30 通道输入 (含周期性 GIS 编码)。
     """
 
     # 1. 基础配置
-    model_name: str = Field(default="met_mamba", description="模型名称")
+    model_name: str = Field(default="scwds_simvp", description="模型名称")
     data_path: str = Field(default="data/samples.jsonl", description="数据索引文件路径 (.jsonl)")
-    save_dir: str = Field(default="./output/mamba", description="训练输出目录")
+    save_dir: str = Field(default="./output/simvp", description="训练输出目录")
     
+    # [关键修改] 输入形状调整
+    # T=10: 输入 10 帧 (过去1小时)
+    # C=30: 28 (原通道) + 2 (GIS 时间周期编码增量) = 30
     in_shape: Tuple[int, int, int, int] = Field(default=(10, 54, 256, 256), description="输入形状 (T, C, H, W)")
-    # Keep both names for compatibility:
-    # - simvp side uses `aft_seq_length`
-    # - some mamba-side code historically used `out_seq_length`
-    out_seq_length: int = Field(default=20, description="输出序列长度 (预测帧数) [legacy key]")
-    aft_seq_length: int = Field(default=20, description="输出序列长度 (预测帧数) [SimVP-compatible key]")
+
+    # [关键新增] 输出序列长度
+    # T_out=20: 预测 20 帧 (未来2小时)
+    aft_seq_length: int = Field(default=20, description="输出序列长度 (预测帧数)")
+
+    @field_validator('in_shape')
+    @classmethod
+    def validate_in_shape(cls, v) -> Tuple[int, int, int, int]:
+        if len(v) != 4 or any(x <= 0 for x in v):
+            raise ValueError(f"in_shape 必须是 4 个正数元素的元组 (T, C, H, W)，当前为 {v}")
+        return (int(v[0]), int(v[1]), int(v[2]), int(v[3]))
+
+    # [优化] 增加训练轮数以适配课程学习 Phase 3
     max_epochs: int = Field(default=100, description="最大训练轮数")
 
     # 2. 数据加载器配置
     batch_size: int = Field(default=4, description="批大小 (单卡)")
     seed: int = Field(default=42, description="全局随机种子")
     num_workers: int = Field(default=4, description="DataLoader 工作线程数")
-    train_split: float = Field(default=0.8, description="训练集比例")
+    train_split: float = Field(default=0.85, description="训练集比例")
     val_split: float = Field(default=0.1, description="验证集比例")
-    test_split: float = Field(default=0.1, description="测试集比例")
+    test_split: float = Field(default=0.05, description="测试集比例")
+    task_mode: str = Field(default='precipitation', description="任务模式")
 
     # 3. Trainer 配置
     precision: Literal["16-mixed", "32", "64", "16-true", "bf16-mixed", "bf16-true", "32-true"] = Field(default="16-mixed", description="训练精度")
     accelerator: Literal["auto", "cpu", "cuda"] = Field(default="auto", description="加速器类型")
     devices: Union[int, str, List[int]] = Field(default="auto", description="设备编号")
-    log_every_n_steps: int = Field(default=100, description="日志记录频率")
+    log_every_n_steps: int = Field(default=10, description="日志记录频率")
     val_check_interval: float = Field(default=1.0, description="验证频率")
-    gradient_clip_val: float = Field(default=0.5, description="梯度裁剪阈值")
+    gradient_clip_val: float = Field(default=1.0, description="梯度裁剪阈值")
     gradient_clip_algorithm: Literal["norm", "value"] = Field(default="norm", description="梯度裁剪算法")
+    deterministic: bool = Field(default=True, description="是否使用确定性算法")
     enable_progress_bar: bool = Field(default=True, description="显示进度条")
     enable_model_summary: bool = Field(default=True, description="显示模型摘要")
     accumulate_grad_batches: int = Field(default=1, description="梯度累积步数")
+    detect_anomaly: bool = Field(default=False, description="PyTorch 异常检测")
+    profiler: Literal["simple", "advanced", None] = Field(default=None, description="性能分析器")
+    limit_train_batches: Union[int, float] = Field(default=1.0, description="限制训练数据量")
+    limit_val_batches: Union[int, float] = Field(default=1.0, description="限制验证数据量")
     num_sanity_val_steps: int = Field(default=2, description="训练前健全性检查步数")
 
-    # 4. 模型结构参数
+    # 4. SimVP 模型结构参数 (SOTA 容量)
     hid_S: int = Field(default=128, description="空间编码器隐藏层通道数")
     hid_T: int = Field(default=512, description="时序转换器隐藏层通道数")
     N_S: int = Field(default=4, description="空间编码器层数")
-    N_T: int = Field(default=12, description="时序转换器层数")
+    N_T: int = Field(default=12, description="时序转换器层数") # 增加层数以捕捉长时依赖
     model_type: str = Field(default='mamba', description="时序模块类型")
     mlp_ratio: float = Field(default=4.0, description="MLP 扩展比例")
     drop: float = Field(default=0.0, description="Dropout 比率")
@@ -86,7 +103,7 @@ class ModelConfig(BaseModel):
     decay_rate: float = Field(default=0.1, description="Step Decay 的衰减率")
 
     @property
-    def in_seq_length(self) -> int:
+    def pre_seq_length(self) -> int:
         return self.in_shape[0]
 
     @property
@@ -99,16 +116,14 @@ class ModelConfig(BaseModel):
 
     def to_dict(self) -> dict:
         data = self.model_dump()
-        data['in_seq_length'] = self.in_seq_length
+        data['pre_seq_length'] = self.pre_seq_length
+        # aft_seq_length 已在 model_dump 中
         data['channels'] = self.channels
         data['resize_shape'] = self.resize_shape
-        # Ensure downstream trainer/model builders can always read the SimVP-standard key.
-        if 'aft_seq_length' not in data or data['aft_seq_length'] is None:
-            data['aft_seq_length'] = data.get('out_seq_length', 20)
         return data
     
     @classmethod
-    def from_dict(cls, data: dict) -> 'Config':
+    def from_dict(cls, data: dict) -> 'SimVPConfig':
         return cls(**data)
 
     model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())

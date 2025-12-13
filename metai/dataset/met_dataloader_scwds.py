@@ -56,6 +56,7 @@ class ScwdsDataset(Dataset):
         """
         record = self.samples[idx]
         sample_id = record.get("sample_id")
+        timestamps = record.get("timestamps")
 
         if self.is_train:
             npz_path = os.path.join(self.npz_dir, f"{sample_id}.npz")
@@ -78,7 +79,7 @@ class ScwdsDataset(Dataset):
         # 创建 MetSample 实例来处理具体的文件读取和预处理
         sample = MetSample.create(
             sample_id,
-            record.get("timestamps"),
+            timestamps,
             config=self.config,
             is_train=self.is_train,
             test_set=self.test_set

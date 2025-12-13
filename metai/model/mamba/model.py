@@ -33,7 +33,8 @@ class BasicConv2d(nn.Module):
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d)):
             trunc_normal_(m.weight, std=.02)
-            nn.init.constant_(m.bias, 0)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         y = self.conv(x)
@@ -116,6 +117,233 @@ class Decoder(nn.Module):
         Y = self.readout(Y)
         return Y
 
+
+class MetaBlock(nn.Module):
+    """
+    SimVP MetaBlock (mamba-only).
+
+    Important for checkpoint compatibility:
+    - Keep attribute names: `block` and optional `reduction`
+    - Keep forward behavior identical to simvp's MetaBlock when model_type == 'mamba'
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        input_resolution=None,
+        model_type=None,
+        mlp_ratio=8.0,
+        drop=0.0,
+        drop_path=0.0,
+        layer_i=0,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        model_type_l = model_type.lower() if model_type is not None else "gsta"
+        if model_type_l != "mamba":
+            raise ValueError(f"metai.model.mamba.MetaBlock only supports model_type='mamba', got {model_type!r}")
+
+        self.block = MambaSubBlock(
+            in_channels,
+            mlp_ratio=mlp_ratio,
+            drop=drop,
+            drop_path=drop_path,
+            act_layer=nn.GELU,
+        )
+
+        if in_channels != out_channels:
+            self.reduction = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x):
+        z = self.block(x)
+        return z if self.in_channels == self.out_channels else self.reduction(z)
+
+
+class MidMetaNet(nn.Module):
+    """
+    The hidden Translator of MetaFormer for SimVP (mamba-only).
+
+    Copied behavior from `metai/model/simvp/simvp_model.py::MidMetaNet` to preserve checkpoint keys.
+    """
+
+    def __init__(
+        self,
+        channel_in,
+        channel_hid,
+        N2,
+        input_resolution=None,
+        model_type=None,
+        mlp_ratio=4.0,
+        drop=0.0,
+        drop_path=0.1,
+        channel_out=None,
+    ):
+        super().__init__()
+        assert N2 >= 2 and mlp_ratio > 1
+        self.N2 = N2
+
+        if channel_out is None:
+            channel_out = channel_in
+        self.channel_out = channel_out
+
+        dpr = [x.item() for x in torch.linspace(1e-2, drop_path, self.N2)]
+
+        # 1. Input layer
+        enc_layers = [
+            MetaBlock(
+                channel_in,
+                channel_hid,
+                input_resolution,
+                model_type,
+                mlp_ratio,
+                drop,
+                drop_path=dpr[0],
+                layer_i=0,
+            )
+        ]
+
+        # 2. Middle layers
+        for i in range(1, N2 - 1):
+            enc_layers.append(
+                MetaBlock(
+                    channel_hid,
+                    channel_hid,
+                    input_resolution,
+                    model_type,
+                    mlp_ratio,
+                    drop,
+                    drop_path=dpr[i],
+                    layer_i=i,
+                )
+            )
+
+        # 3. Output layer
+        enc_layers.append(
+            MetaBlock(
+                channel_hid,
+                channel_out,
+                input_resolution,
+                model_type,
+                mlp_ratio,
+                drop,
+                drop_path=drop_path,
+                layer_i=N2 - 1,
+            )
+        )
+
+        # Keep name `enc` for checkpoint compatibility
+        self.enc = nn.Sequential(*enc_layers)
+
+    def forward(self, x):
+        # x: [B, T_in, C, H, W] -> [B, T_in*C, H, W]
+        B, T, C, H, W = x.shape
+        x = x.reshape(B, T * C, H, W)
+
+        z = x
+        for i in range(self.N2):
+            z = self.enc[i](z)
+
+        # z: [B, T_out*C, H, W] -> [B, T_out, C, H, W]
+        T_out = self.channel_out // C
+        y = z.reshape(B, T_out, C, H, W)
+        return y
+
+
+class SimVP_Model(nn.Module):
+    r"""
+    SimVP Model (mamba mode) migrated into `metai/model/mamba`.
+
+    This keeps the original SimVP(mamba) structure and module naming so that checkpoints
+    trained with `metai/model/simvp` (model_type='mamba') can be loaded and run here.
+    """
+
+    def __init__(
+        self,
+        in_shape,
+        hid_S=16,
+        hid_T=256,
+        N_S=4,
+        N_T=4,
+        model_type="mamba",
+        mlp_ratio=8.0,
+        drop=0.0,
+        drop_path=0.0,
+        spatio_kernel_enc=3,
+        spatio_kernel_dec=3,
+        act_inplace=True,
+        out_channels=None,
+        aft_seq_length=None,
+        **kwargs,
+    ):
+        super().__init__()
+
+        # T: input frames, C: input channels
+        T, C, H, W = in_shape
+        self.T_out = aft_seq_length if aft_seq_length is not None else T
+
+        if out_channels is None:
+            out_channels = C
+        self.out_channels = out_channels
+
+        # Downsampled resolution (same logic as SimVP)
+        H_ds, W_ds = int(H / 2 ** (N_S / 2)), int(W / 2 ** (N_S / 2))
+        act_inplace = False
+
+        # Encoder / Decoder
+        self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
+        self.dec = Decoder(hid_S, hid_S, N_S, spatio_kernel_dec, act_inplace=act_inplace)
+
+        model_type_l = "gsta" if model_type is None else str(model_type).lower()
+        if model_type_l != "mamba":
+            raise ValueError(f"metai.model.mamba.SimVP_Model only supports model_type='mamba', got {model_type!r}")
+
+        channel_in = T * hid_S
+        channel_out = self.T_out * hid_S
+        self.hid = MidMetaNet(
+            channel_in,
+            hid_T,
+            N_T,
+            input_resolution=(H_ds, W_ds),
+            model_type=model_type_l,
+            mlp_ratio=mlp_ratio,
+            drop=drop,
+            drop_path=drop_path,
+            channel_out=channel_out,
+        )
+
+        # Readout
+        self.readout = nn.Conv2d(hid_S, out_channels, kernel_size=1)
+        if self.readout.bias is not None:
+            nn.init.constant_(self.readout.bias, -5.0)
+
+    def forward(self, x_raw, **kwargs):
+        # x_raw: [B, T_in, C_in, H, W]
+        B, T, C, H, W = x_raw.shape
+        x = x_raw.view(B * T, C, H, W)
+
+        # 1. Encoder
+        embed, skip = self.enc(x)
+        _, C_, H_, W_ = embed.shape
+
+        # 2. Translator (MidMetaNet)
+        z = embed.view(B, T, C_, H_, W_)
+        hid = self.hid(z)  # [B, T_out, C_, H_, W_]
+        hid = hid.reshape(B * self.T_out, C_, H_, W_)
+
+        # 3. Skip alignment (same as SimVP)
+        _, C_skip, H_skip, W_skip = skip.shape
+        skip = skip.view(B, T, C_skip, H_skip, W_skip)
+        skip_last = skip[:, -1:, ...]
+        skip_out = skip_last.expand(-1, self.T_out, -1, -1, -1).reshape(B * self.T_out, C_skip, H_skip, W_skip)
+
+        # 4. Decoder + Readout
+        Y = self.dec(hid, skip_out)
+        Y = self.readout(Y)
+        Y = Y.reshape(B, self.T_out, self.out_channels, H, W)
+        return Y
 
 class MambaMidNet(nn.Module):
     """
@@ -210,7 +438,8 @@ class SimMamba(nn.Module):
 
         # 4. Readout
         self.readout = nn.Conv2d(hid_S, out_channels, kernel_size=1)
-        nn.init.constant_(self.readout.bias, - 5.0) # 初始化偏置以优化收敛
+        if self.readout.bias is not None:
+            nn.init.constant_(self.readout.bias, -5.0) # 初始化偏置以优化收敛
 
     def forward(self, x_raw, **kwargs):
         # x_raw: [B, T, C, H, W]
