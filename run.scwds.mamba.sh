@@ -40,11 +40,11 @@ case $MODE in
         --trainer.default_root_dir "./output/mamba" \
         --trainer.accelerator cuda \
         --trainer.devices 0,1,2,3 \
-        --trainer.strategy ddp_find_unused_parameters_true \
+        --trainer.strategy ddp \
         --trainer.precision 16-mixed \
         --trainer.max_epochs 100 \
-        --trainer.log_every_n_steps 1000 \
-        --trainer.accumulate_grad_batches 1 \
+        --trainer.log_every_n_steps 100 \
+        --trainer.accumulate_grad_batches 2 \
         --trainer.gradient_clip_val 0.5 \
         --trainer.gradient_clip_algorithm "norm" \
         \
@@ -61,8 +61,8 @@ case $MODE in
         --trainer.callbacks.patience 20 \
         \
         --data.data_path "data/samples.jsonl" \
-        --data.batch_size 4 \
-        --data.num_workers 8 \
+        --data.batch_size 2 \
+        --data.num_workers 4 \
         \
         --model.in_shape "[10, 54, 256, 256]" \
         --model.out_seq_length 20 \
@@ -107,7 +107,7 @@ case $MODE in
         echo "🧪 开始测试 Mamba 基座模型..."
         echo "----------------------------------------"
         
-        python run/test_scwds_simvp.py \
+        python run/test_scwds_mamba.py \
             --data_path data/samples.jsonl \
             --in_shape 10 54 256 256 \
             --aft_seq_length 20 \

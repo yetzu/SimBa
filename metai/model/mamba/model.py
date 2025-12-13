@@ -136,23 +136,37 @@ class MetMamba(nn.Module):
         x = x_raw.view(B*T, C, H, W)
 
         # 1. Encode
+        # embed: [B*T, hid_S, H_, W_]
+        # skip:  [B*T, hid_S, H_skip, W_skip]
         embed, skip = self.enc(x)
-        _, _, H_, W_ = embed.shape 
+        _, C_, H_, W_ = embed.shape 
 
         # 2. Translate (Time-Mixing via Mamba)
-        # [B*T, S, H, W] -> [B, T*S, H, W]
-        z = embed.view(B, T * -1, H_, W_)
-        hid = self.hid(z)
-        hid = self.proj_out(hid) # -> [B, T_out*S, H, W]
+        # 显式重塑为 5D: [B, T, C_, H_, W_]
+        z = embed.view(B, T, C_, H_, W_)
+        # 展平为 4D 供 MambaMidNet 处理: [B, T*C_, H_, W_]
+        z_flat = z.reshape(B, T * C_, H_, W_)
+        
+        hid = self.hid(z_flat)       # -> [B, hid_T, H_, W_]
+        hid = self.proj_out(hid)     # -> [B, T_out*C_, H_, W_]
         
         # 3. Decode
-        dec_in = hid.view(B * self.T_out, -1, H_, W_)
+        # 重塑为 [B*T_out, C_, H_, W_] 供 Decoder 处理
+        dec_in = hid.reshape(B * self.T_out, C_, H_, W_)
         
-        # Skip Connection Alignment
-        # 取最后一帧的 skip 特征并广播到所有预测帧
-        skip = skip.view(B, T, -1, H, W)
-        skip_last = skip[:, -1:, ...].expand(-1, self.T_out, -1, -1, -1)
-        skip_out = skip_last.reshape(B * self.T_out, -1, H, W)
+        # Skip Connection Alignment (对齐 SimVP 实现)
+        # 获取 skip 自身的空间维度
+        _, C_skip, H_skip, W_skip = skip.shape
+        
+        # 还原 skip 的时间维度: [B, T, C_skip, H_skip, W_skip]
+        skip = skip.view(B, T, C_skip, H_skip, W_skip)
+        
+        # 策略：取 Encoder 最后一帧的 Skip 特征，复制 T_out 次
+        skip_last = skip[:, -1:, ...] # [B, 1, C_skip, H_skip, W_skip]
+        
+        # 扩展到 T_out 长度并展平: [B*T_out, C_skip, H_skip, W_skip]
+        skip_out = skip_last.expand(-1, self.T_out, -1, -1, -1)
+        skip_out = skip_out.reshape(B * self.T_out, C_skip, H_skip, W_skip)
         
         Y = self.dec(dec_in, skip_out)
         Y = self.readout(Y)
