@@ -62,7 +62,7 @@ case $MODE in
         \
         --data.data_path "data/samples.jsonl" \
         --data.batch_size 2 \
-        --data.num_workers 4 \
+        --data.num_workers 2 \
         \
         --model.in_shape "[10, 54, 256, 256]" \
         --model.out_seq_length 20 \
@@ -71,8 +71,8 @@ case $MODE in
         --model.N_S 4 \
         --model.N_T 16 \
         --model.mlp_ratio 4.0 \
-        --model.spatio_kernel_enc 7 \
-        --model.spatio_kernel_dec 7 \
+        --model.spatio_kernel_enc 5 \
+        --model.spatio_kernel_dec 5 \
         --model.drop 0.05 \
         --model.drop_path 0.1 \
         \

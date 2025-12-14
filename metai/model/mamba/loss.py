@@ -9,28 +9,34 @@ from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 
 class WeightedScoreSoftCSILoss(nn.Module):
     """
-    [竞赛专用] Soft-CSI 损失函数
-    功能：
-    1. 严格对齐官方评分表的阈值 (0.1, 1.0, 2.0, 5.0, 8.0)
-    2. 严格对齐官方评分表的强度权重 (0.1, 0.1, 0.2, 0.25, 0.35)
-    3. 支持官方定义的时效权重 (60min权重最高，120min权重极低)
+    区间 Soft-CSI 损失函数 (Interval Soft-CSI)
+    
+    修改说明：
+    严格对齐 metrices.py 的区间评分逻辑。
+    - 旧逻辑：累计阈值 (pred > t) -> 导致区间评分时产生大量空报
+    - 新逻辑：区间阈值 (low <= pred < high) -> 对应 metrices.py 的 Bin-based 规则
     """
     def __init__(self, smooth=1.0):
         super().__init__()
         self.MM_MAX = 30.0 
         
-        # --- 1. 对齐强度分级及权重 (表2) ---
+        # --- 1. 对齐强度分级及权重 ---
         # 阈值: 0.1, 1.0, 2.0, 5.0, 8.0 (mm)
         thresholds_raw = [0.1, 1.0, 2.0, 5.0, 8.0]
-        # 权重: 0.1, 0.1, 0.2, 0.25, 0.35 (越大的雨越重要)
+        # 权重: 0.1, 0.1, 0.2, 0.25, 0.35
         weights_raw    = [0.1, 0.1, 0.2, 0.25, 0.35]
         
+        # 注册归一化后的下界 (Low Thresholds)
         self.register_buffer('thresholds', torch.tensor(thresholds_raw) / self.MM_MAX)
+        
+        # [新增] 注册归一化后的上界 (High Thresholds)
+        # 构造逻辑：[1.0, 2.0, 5.0, 8.0, inf]
+        highs_raw = thresholds_raw[1:] + [float('inf')]
+        self.register_buffer('highs', torch.tensor(highs_raw) / self.MM_MAX)
+        
         self.register_buffer('intensity_weights', torch.tensor(weights_raw))
         
-        # --- 2. 对齐时效及权重 (表1) ---
-        # 对应 6min 到 120min (共20帧)
-        # 注意：第10帧(60min)权重最大(0.1)，第20帧(120min)权重最小(0.005)
+        # --- 2. 对齐时效及权重 ---
         time_weights_raw = [
             0.0075, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1,
             0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.0075, 0.005 
@@ -40,18 +46,10 @@ class WeightedScoreSoftCSILoss(nn.Module):
         self.smooth = smooth
 
     def forward(self, pred, target, mask=None):
-        """
-        pred: [B, T, H, W], 范围 [0, 1]
-        target: [B, T, H, W], 范围 [0, 1]
-        mask: [B, T, H, W] 或 [B, 1, H, W]
-        """
         T = pred.shape[1]
-        # 动态截取当前需要的时效权重，并归一化
-        # 归一化是为了保证 Loss 的数值范围稳定，不随 T 的变化而剧烈波动
         current_time_weights = self.time_weights[:, :T, :, :]
         current_time_weights = current_time_weights / current_time_weights.mean()
         
-        # 统一 Mask 维度
         if mask is not None:
             if mask.dim() == 4 and mask.shape[1] == 1 and pred.shape[1] > 1:
                 mask = mask.expand(-1, pred.shape[1], -1, -1)
@@ -61,50 +59,79 @@ class WeightedScoreSoftCSILoss(nn.Module):
         total_weighted_loss = 0.0
         total_weight_sum = 0.0
 
-        for i, t in enumerate(self.thresholds):
+        # 同时遍历下界(low)和上界(high)
+        for i, (t_low, t_high) in enumerate(zip(self.thresholds, self.highs)):
             w = self.intensity_weights[i]
             
-            # 1. 软二值化 (Sigmoid temp=50 模拟阶跃函数)
-            # 当 pred > t 时，(pred-t)*50 > 0，sigmoid 趋向 1
-            pred_score = torch.sigmoid((pred - t) * 2000)
-            target_score = (target > t).float()
+            # --- 1. 计算区间 Soft Probability ---
+            # 逻辑：Prob(区间) = Sigmoid(pred - low) * (1 - Sigmoid(pred - high))
+            # 含义：必须大于下界，且不能大于上界
             
-            # 2. 应用 Mask (只计算有效区域)
+            # (A) 大于下界的概率
+            score_low = torch.sigmoid((pred - t_low) * 2000)
+            
+            # (B) 小于上界的概率 (如果是 inf 则概率为 1)
+            if torch.isinf(t_high):
+                score_in_bin = score_low # 最后一个区间只看下界
+            else:
+                score_high = torch.sigmoid((pred - t_high) * 2000)
+                # "在区间内" = "大于下界" AND "不大于上界"
+                score_in_bin = score_low * (1.0 - score_high)
+
+            # --- 2. 计算区间 Target ---
+            # 逻辑：Target = (target >= low) & (target < high)
+            target_ge_low = (target >= t_low)
+            if torch.isinf(t_high):
+                target_in_bin = target_ge_low.float()
+            else:
+                target_lt_high = (target < t_high)
+                target_in_bin = (target_ge_low & target_lt_high).float()
+            
+            # --- 3. 应用 Mask ---
             if mask is not None:
-                pred_score = pred_score * mask
-                target_score = target_score * mask
+                score_in_bin = score_in_bin * mask
+                target_in_bin = target_in_bin * mask
                 
-            # 3. 计算 Soft-TP, Soft-FN, Soft-FP
-            # 在空间维度 (H, W) 求和
-            intersection = (pred_score * target_score).sum(dim=(-2, -1))
-            total_pred = pred_score.sum(dim=(-2, -1))
-            total_target = target_score.sum(dim=(-2, -1))
+            # --- 4. 计算 Soft-CSI ---
+            intersection = (score_in_bin * target_in_bin).sum(dim=(-2, -1))
+            total_pred = score_in_bin.sum(dim=(-2, -1))
+            total_target = target_in_bin.sum(dim=(-2, -1))
             union = total_pred + total_target - intersection
             
-            # 4. 计算 Soft-CSI
             csi = (intersection + self.smooth) / (union + self.smooth)
-            loss_map = 1.0 - csi # [B, T]
+            loss_map = 1.0 - csi 
             
-            # 5. 应用时效权重 (在时间维度 T 平均)
             weighted_loss_t = (loss_map * current_time_weights.squeeze(-1).squeeze(-1)).mean()
             
-            # 6. 应用强度权重累加
             total_weighted_loss += weighted_loss_t * w
             total_weight_sum += w
 
         return total_weighted_loss / total_weight_sum
 
-
 class LogSpectralDistanceLoss(nn.Module):
     """
     频域损失 (Spectral Loss)
-    作用：防止预测结果模糊 (Blurry)，强制模型保留高频纹理信息。
     """
     def __init__(self, epsilon=1e-6):
         super().__init__()
         self.epsilon = epsilon
 
     def forward(self, pred, target, mask=None): 
+        # 1. 预处理：应用 Mask
+        # 必须在 FFT 前将无效区域置为 0，否则 FFT 会把背景的填充值（可能是随机值或NaN）
+        # 转换为全频段噪声，严重干扰 Loss 计算。
+        if mask is not None:
+            # 扩展 Mask 维度以匹配 [B, T, H, W]
+            if mask.dim() == 4 and mask.shape[1] == 1 and pred.shape[1] > 1:
+                mask_bc = mask.expand(-1, pred.shape[1], -1, -1)
+            elif mask.dim() == 5:
+                mask_bc = mask.squeeze(2)
+            else:
+                mask_bc = mask
+                
+            pred = pred * mask_bc
+            target = target * mask_bc
+        
         # FFT 变换需要 float32
         pred_fp32 = pred.float()
         target_fp32 = target.float()
@@ -117,8 +144,7 @@ class LogSpectralDistanceLoss(nn.Module):
         pred_mag = torch.abs(pred_fft)
         target_mag = torch.abs(target_fft)
         
-        # 计算对数距离 (L1 Loss on Log-Magnitude)
-        # Log 能够平衡低频(大数值)和高频(小数值)的贡献
+        # 计算对数距离
         loss = F.l1_loss(torch.log(pred_mag + self.epsilon), torch.log(target_mag + self.epsilon))
         
         return loss
