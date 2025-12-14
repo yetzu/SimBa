@@ -118,7 +118,7 @@ class MetMambaTrainer(l.LightningModule):
     # =======================================================
     # 新增：重写 lr_scheduler_step 以支持 Timm 调度器
     # =======================================================
-    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):
+    def lr_scheduler_step(self, scheduler, optimizer_idx, metric=None):
         """
         Custom LR Scheduler Step for TIMM Schedulers
         TIMM 调度器通常需要显式传入 epoch 参数

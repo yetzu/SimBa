@@ -61,22 +61,22 @@ case $MODE in
         --trainer.callbacks.patience 20 \
         \
         --data.data_path "data/samples.jsonl" \
-        --data.batch_size 2 \
+        --data.batch_size 8 \
         --data.num_workers 4 \
         \
         --model.in_shape "[10, 54, 256, 256]" \
         --model.out_seq_length 20 \
-        --model.hid_S 256 \
-        --model.hid_T 1024 \
+        --model.hid_S 128 \
+        --model.hid_T 512 \
         --model.N_S 4 \
-        --model.N_T 16 \
+        --model.N_T 8 \
         --model.mlp_ratio 4.0 \
-        --model.spatio_kernel_enc 7 \
-        --model.spatio_kernel_dec 7 \
+        --model.spatio_kernel_enc 3 \
+        --model.spatio_kernel_dec 3 \
         --model.drop 0.05 \
         --model.drop_path 0.1 \
         \
-        --model.d_state 32 \
+        --model.d_state 16 \
         --model.d_conv 4 \
         --model.expand 2 \
         \
