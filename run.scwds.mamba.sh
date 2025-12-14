@@ -43,7 +43,7 @@ case $MODE in
         --trainer.strategy ddp \
         --trainer.precision 16-mixed \
         --trainer.max_epochs 100 \
-        --trainer.log_every_n_steps 100 \
+        --trainer.log_every_n_steps 1000 \
         --trainer.accumulate_grad_batches 2 \
         --trainer.gradient_clip_val 0.5 \
         --trainer.gradient_clip_algorithm "norm" \
@@ -110,8 +110,8 @@ case $MODE in
         python run/test_scwds_mamba.py \
             --data_path data/samples.jsonl \
             --in_shape 10 54 256 256 \
-            --aft_seq_length 20 \
-            --save_dir ./output/simvp \
+            --out_seq_length 20 \
+            --save_dir ./output/mamba \
             --num_samples 10 \
             --accelerator cuda
         ;;
@@ -124,10 +124,10 @@ case $MODE in
         echo "🔮 开始推理 Mamba 模型..."
         echo "----------------------------------------"
         
-        python run/infer_scwds_simvp.py \
+        python run/infer_scwds_mamba.py \
             --data_path data/samples.testset.jsonl \
             --in_shape 20 54 256 256 \
-            --save_dir ./output/simvp \
+            --save_dir ./output/mamba \
             --accelerator cuda:0
         ;;
 

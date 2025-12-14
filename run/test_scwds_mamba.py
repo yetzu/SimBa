@@ -69,26 +69,35 @@ def restore_stdout():
         _logger = None
 
 def find_best_ckpt(save_dir: str) -> str:
-    # 优先查找 best.ckpt
+    # 0. 如果传入的是具体文件路径，直接返回
+    if os.path.isfile(save_dir):
+        return save_dir
+
+    # 1. 优先查找根目录下的 best.ckpt 或 last.ckpt
     best = os.path.join(save_dir, 'best.ckpt')
     if os.path.exists(best): return best
     
-    # 其次查找 last.ckpt
     last = os.path.join(save_dir, 'last.ckpt')
     if os.path.exists(last): return last
     
-    # 最后查找所有 checkpoint 文件，返回最新的
-    cpts = glob.glob(os.path.join(save_dir, '*.ckpt'))
-    cpts = [c for c in cpts if 'last.ckpt' not in c and 'best.ckpt' not in c]
+    # 2. [修改] 递归查找所有 .ckpt 文件 (支持 lightning_logs/version_x/checkpoints 结构)
+    # 使用 recursive=True 遍历子目录
+    print(f"[INFO] Searching for checkpoints in {save_dir} recursively...")
+    search_pattern = os.path.join(save_dir, '**', '*.ckpt')
+    all_cpts = glob.glob(search_pattern, recursive=True)
     
-    if len(cpts) > 0:
-        cpts = sorted(cpts)
-        return cpts[-1]
-        
-    all_cpts = sorted(glob.glob(os.path.join(save_dir, '*.ckpt')))
-    if len(all_cpts) == 0:
+    if not all_cpts:
         raise FileNotFoundError(f'No checkpoint found in {save_dir}')
-    return all_cpts[-1]
+
+    # 3. 排除掉可能存在的临时文件或非目标文件，并排序
+    # 优先排除 explicitly named last/best if we want to find specific epochs, 
+    # but usually getting the latest file by name (epoch number) is safe.
+    # 简单的按文件名排序通常能获得最大的 epoch (例如 epoch=09.ckpt > epoch=01.ckpt)
+    all_cpts = sorted(all_cpts)
+    
+    found_ckpt = all_cpts[-1]
+    print(f"[INFO] Found checkpoint: {found_ckpt}")
+    return found_ckpt
 
 def get_checkpoint_info(ckpt_path: str):
     """从 checkpoint 文件中提取训练关键信息（不打印）"""
@@ -446,11 +455,11 @@ def main():
     
     with torch.no_grad():
         for bidx, batch in enumerate(test_loader):
-            metadata_batch, batch_x, batch_y, target_mask, input_mask = batch
+            metadata_batch, batch_x, batch_y, input_mask, target_mask = batch
             
             # [修改] 调用 test_step (传入 tuple)
             outputs = model.test_step(
-                (metadata_batch, batch_x.to(device), batch_y.to(device), target_mask.to(device), input_mask.to(device)), 
+                (None, batch_x.to(device), batch_y.to(device), None, target_mask.to(device), ), 
                 bidx
             )
             
