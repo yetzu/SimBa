@@ -90,10 +90,10 @@ class MetMambaTrainer(l.LightningModule):
 
         return MetMamba(
             in_shape=get_cfg('in_shape'),
-            hid_S=get_cfg('hid_S', 64),
-            hid_T=get_cfg('hid_T', 256),
+            hid_S=get_cfg('hid_S', 128),
+            hid_T=get_cfg('hid_T', 512),
             N_S=get_cfg('N_S', 4),
-            N_T=get_cfg('N_T', 8),
+            N_T=get_cfg('N_T', 12),
             mlp_ratio=get_cfg('mlp_ratio', 4.0),
             drop=get_cfg('drop', 0.0),
             drop_path=get_cfg('drop_path', 0.0),

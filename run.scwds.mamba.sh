@@ -51,7 +51,7 @@ case $MODE in
         --trainer.callbacks+=lightning.pytorch.callbacks.ModelCheckpoint \
         --trainer.callbacks.monitor "val_score" \
         --trainer.callbacks.mode "max" \
-        --trainer.callbacks.save_top_k -1 \
+        --trainer.callbacks.save_top_k "-1" \
         --trainer.callbacks.save_last true \
         --trainer.callbacks.filename "epoch={epoch:02d}-score={val_score:.4f}" \
         \
@@ -61,7 +61,7 @@ case $MODE in
         --trainer.callbacks.patience 20 \
         \
         --data.data_path "data/samples.jsonl" \
-        --data.batch_size 8 \
+        --data.batch_size 4 \
         --data.num_workers 4 \
         \
         --model.in_shape "[10, 54, 256, 256]" \
