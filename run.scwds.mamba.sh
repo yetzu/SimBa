@@ -43,7 +43,7 @@ case $MODE in
         --trainer.strategy ddp \
         --trainer.precision 16-mixed \
         --trainer.max_epochs 100 \
-        --trainer.log_every_n_steps 1000 \
+        --trainer.log_every_n_steps 50 \
         --trainer.accumulate_grad_batches 2 \
         --trainer.gradient_clip_val 0.5 \
         --trainer.gradient_clip_algorithm "norm" \
@@ -62,27 +62,27 @@ case $MODE in
         \
         --data.data_path "data/samples.jsonl" \
         --data.batch_size 2 \
-        --data.num_workers 2 \
+        --data.num_workers 8 \
         \
         --model.in_shape "[10, 54, 256, 256]" \
         --model.out_seq_length 20 \
-        --model.hid_S 256 \
-        --model.hid_T 1024 \
+        --model.hid_S 64 \
+        --model.hid_T 256 \
         --model.N_S 4 \
-        --model.N_T 16 \
+        --model.N_T 12 \
         --model.mlp_ratio 4.0 \
         --model.spatio_kernel_enc 5 \
         --model.spatio_kernel_dec 5 \
-        --model.drop 0.05 \
+        --model.drop 0.0 \
         --model.drop_path 0.1 \
         \
-        --model.d_state 32 \
+        --model.d_state 16 \
         --model.d_conv 4 \
         --model.expand 2 \
         \
-        --model.lr 5e-5 \
+        --model.lr 2e-4 \
         --model.opt "adamw" \
-        --model.weight_decay 1e-5 \
+        --model.weight_decay 0.05 \
         --model.filter_bias_and_bn true \
         --model.sched "cosine" \
         --model.min_lr 1e-6 \
@@ -95,7 +95,7 @@ case $MODE in
         --model.loss_weight_l1 1.0 \
         --model.loss_weight_ssim 0.5 \
         --model.loss_weight_csi 1.0 \
-        --model.loss_weight_spectral 0.1 \
+        --model.loss_weight_spectral 0.5 \
         --model.loss_weight_evo 0.5 \
         ;;
         
