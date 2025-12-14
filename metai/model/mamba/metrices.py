@@ -12,13 +12,9 @@ class MetScore(nn.Module):
     支持 Log Space 反归一化，确保在物理空间 (mm) 计算指标。
     """
     
-    def __init__(self, use_log_norm: bool = True, data_max: float = 30.0):
+    def __init__(self, data_max: float = 30.0):
         super().__init__()
-        self.use_log_norm = use_log_norm
         self.data_max = data_max
-        
-        # Log 反变换参数: log(30.0 + 1)
-        self.log_factor = math.log(self.data_max + 1)
         
         # --- 注册常量参数 (Buffer) ---
         # 1. 时效权重 (对应 6min - 120min)
@@ -51,14 +47,8 @@ class MetScore(nn.Module):
 
     def _compute(self, pred_norm, target_norm, mask):
         # 1. 反归一化：还原为物理量 (mm)
-        if self.use_log_norm:
-            pred = torch.expm1(pred_norm * self.log_factor)
-            target = torch.expm1(target_norm * self.log_factor)
-            pred = torch.clamp(pred, 0.0, None)
-            target = torch.clamp(target, 0.0, None)
-        else:
-            pred = pred_norm * self.data_max
-            target = target_norm * self.data_max
+        pred = pred_norm * self.data_max
+        target = target_norm * self.data_max
         
         # 维度适配处理
         if pred.dim() == 5 and pred.shape[2] == 1:
@@ -185,11 +175,11 @@ class MetMetricCollection(nn.Module):
     2. 处理指标名称前缀 (如 'train_', 'val_')。
     3. 适配 LightningModule 的调用方式。
     """
-    def __init__(self, prefix: str = "", use_log_norm: bool = True):
+    def __init__(self, prefix: str = ""):
         super().__init__()
         self.prefix = prefix
         # MetScore 是 nn.Module，包含 buffer，Lightning 会自动处理设备移动
-        self.scorer = MetScore(use_log_norm=use_log_norm)
+        self.scorer = MetScore()
         # Tracker 是普通类，用于 CPU 累积
         self.tracker = MetricTracker()
 
