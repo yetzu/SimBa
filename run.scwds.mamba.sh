@@ -40,20 +40,21 @@ case $MODE in
         --trainer.default_root_dir "./output/mamba" \
         --trainer.accelerator cuda \
         --trainer.devices 0,1,2,3 \
-        --trainer.strategy deepspeed_stage_2 \
+        --trainer.strategy ddp \
         --trainer.precision 16-mixed \
         --trainer.max_epochs 100 \
         --trainer.log_every_n_steps 100 \
-        --trainer.accumulate_grad_batches 1 \
+        --trainer.accumulate_grad_batches 4 \
         --trainer.gradient_clip_val 0.5 \
         --trainer.gradient_clip_algorithm "norm" \
         \
         --trainer.callbacks+=lightning.pytorch.callbacks.ModelCheckpoint \
+        --trainer.callbacks.dirpath "./output/mamba/checkpoints" \
         --trainer.callbacks.monitor "val_score" \
         --trainer.callbacks.mode "max" \
         --trainer.callbacks.save_top_k "-1" \
         --trainer.callbacks.save_last true \
-        --trainer.callbacks.filename "{epoch:02d}{val_score:.4f}" \
+        --trainer.callbacks.filename "{epoch:02d}-{val_score:.4f}" \
         \
         --trainer.callbacks+=lightning.pytorch.callbacks.EarlyStopping \
         --trainer.callbacks.monitor "val_score" \
@@ -61,7 +62,7 @@ case $MODE in
         --trainer.callbacks.patience 20 \
         \
         --data.data_path "data/samples.jsonl" \
-        --data.batch_size 4 \
+        --data.batch_size 1 \
         --data.num_workers 8 \
         \
         --model.in_shape "[10, 54, 256, 256]" \
@@ -97,7 +98,7 @@ case $MODE in
         --model.loss_weight_csi 1.0 \
         --model.loss_weight_spectral 0.5 \
         --model.loss_weight_evo 0.5 \
-        --ckpt_path ./output/mamba/lightning_logs/version_0/checkpoints/last.ckpt \
+        --ckpt_path ./output/mamba/checkpoints/last.ckpt \
         ;;
         
     # ============================================================
@@ -129,7 +130,7 @@ case $MODE in
             --data_path data/samples.testset.jsonl \
             --in_shape 20 54 256 256 \
             --save_dir ./output/mamba \
-            --accelerator cuda:0
+            --accelerator cuda
         ;;
 
     # ============================================================
@@ -144,7 +145,7 @@ case $MODE in
             --data_path data/samples.testset.jsonl \
             --in_shape 20 54 256 256 \
             --save_dir ./output/mamba \
-            --accelerator cuda:0 \
+            --accelerator cuda \
             --gpm_alpha 0.5 \
             --gpm_decay 0.98
         ;;
