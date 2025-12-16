@@ -1,8 +1,7 @@
 #!/bin/bash
-
-# Nowcasting 全流程脚本
+# SCWDS Nowcasting 全流程脚本
 # 包含: Train -> Test -> Infer  ->
-# Usage: bash run.scwds.simvp.sh [MODE]
+# Usage: bash run.scwds.mamba.sh [MODE]
 
 # ================= 环境变量优化 =================
 export PYTHONPATH=$PYTHONPATH:$(pwd)
@@ -19,7 +18,6 @@ if [ $# -eq 0 ]; then
     echo " train      - 训练 Mamba 基座模型"
     echo " test       - 测试 Mamba 基座模型"
     echo " infer      - 使用 Mamba 基座进行推理"
-    echo " infer_gpm  - 使用 Soft-GPM 后处理推理"
     exit 1
 fi
 
@@ -27,7 +25,7 @@ MODE=$1
 
 case $MODE in
     # ============================================================
-    # 1. 训练 Mamba 基座 (Stage 1)
+    # 1. 训练 Mamba 基座
     # ============================================================
     "train")
         echo "--------------------------------------------------------"
@@ -102,7 +100,7 @@ case $MODE in
         ;;
         
     # ============================================================
-    # 2. 测试 Mamba 基座
+    # 2. 测试
     # ============================================================
     "test")
         echo "----------------------------------------"
@@ -115,11 +113,12 @@ case $MODE in
             --out_seq_length 20 \
             --save_dir ./output/mamba \
             --num_samples 10 \
-            --accelerator cuda
+            --accelerator cuda \
+            # --ckpt_path ./output/mamba/checkpoints/epoch=16-val_score=0.0488.ckpt
         ;;
         
     # ============================================================
-    # 3. 推理 Mamba 基座
+    # 3. 推理
     # ============================================================
     "infer")
         echo "----------------------------------------"
@@ -132,24 +131,7 @@ case $MODE in
             --save_dir ./output/mamba \
             --accelerator cuda
         ;;
-
-    # ============================================================
-    # 4. 推理 Mamba 基座 + Soft-GPM 后处理
-    # ============================================================
-    "infer_gpm")
-        echo "----------------------------------------"
-        echo "🔮 开始推理 Mamba (Soft-GPM) 模型..."
-        echo "----------------------------------------"
-        
-        python run/infer_scwds_mamba_gpm.py \
-            --data_path data/samples.testset.jsonl \
-            --in_shape 20 54 256 256 \
-            --save_dir ./output/mamba \
-            --accelerator cuda \
-            --gpm_alpha 0.5 \
-            --gpm_decay 0.98
-        ;;
-        
+       
 esac
 
 echo "✅ 操作完成！"

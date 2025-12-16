@@ -415,6 +415,8 @@ def parse_args():
     parser.add_argument('--save_dir', type=str, default='./output/mamba')
     parser.add_argument('--num_samples', type=int, default=10)
     parser.add_argument('--accelerator', type=str, default='cuda')
+    parser.add_argument('--ckpt_path', type=str, default=None, 
+                        help='Path to specific checkpoint file. If None, auto-search in save_dir.')
     return parser.parse_args()
 
 def main():
@@ -422,9 +424,14 @@ def main():
     device = torch.device(args.accelerator if torch.cuda.is_available() else 'cpu')
     
     # 1. Config & Paths
-    resize_shape = (args.in_shape[2], args.in_shape[3])
+    if args.ckpt_path and os.path.exists(args.ckpt_path):
+        ckpt_path = args.ckpt_path
+        print(f"[INFO] Using specified checkpoint: {ckpt_path}")
+    else:
+        if args.ckpt_path:
+            print(f"[WARN] Specified checkpoint not found: {args.ckpt_path}. Falling back to search.")
+        ckpt_path = find_best_ckpt(args.save_dir)
     
-    ckpt_path = find_best_ckpt(args.save_dir)
     ckpt_info = get_checkpoint_info(ckpt_path)
     epoch = ckpt_info.get('epoch', None)
     
@@ -444,7 +451,7 @@ def main():
     print(f"[INFO] Metric MM_MAX: {MetricConfig.MM_MAX}")
     print(f"[INFO] 可视化结果将保存到: {out_dir}")
     
-    # [修改] 加载 MetMamba 模型
+    # 加载 MetMamba 模型
     model = MetMambaTrainer.load_from_checkpoint(ckpt_path)
     model.eval().to(device)
     

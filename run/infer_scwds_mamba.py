@@ -101,6 +101,8 @@ def parse_args():
     parser.add_argument('--accelerator', type=str, default='cuda')
     parser.add_argument('--vis', action='store_true', help='Enable visualization')
     parser.add_argument('--vis_output', type=str, default='./output/mamba/vis_infer')
+    parser.add_argument('--ckpt_path', type=str, default=None, 
+                        help='Path to specific checkpoint file. If None, auto-search in save_dir.')
     return parser.parse_args()
 
 def main():
@@ -131,9 +133,17 @@ def main():
     
     # 3. Model
     try:
-        ckpt_path = find_latest_ckpt(config.save_dir)
-        MLOGI(f"加载检查点: {ckpt_path}")
-        # [Modification] Load MetMambaTrainer from checkpoint
+        if args.ckpt_path is not None:
+            # 如果命令行指定了路径，直接使用
+            if not os.path.exists(args.ckpt_path):
+                raise FileNotFoundError(f"指定的 Checkpoint 文件不存在: {args.ckpt_path}")
+            ckpt_path = args.ckpt_path
+            MLOGI(f"加载指定检查点: {ckpt_path}")
+        else:
+            # 否则自动搜索
+            ckpt_path = find_latest_ckpt(config.save_dir)
+            MLOGI(f"加载自动搜索的检查点: {ckpt_path}")
+        # Load MetMambaTrainer from checkpoint
         model = MetMambaTrainer.load_from_checkpoint(ckpt_path, map_location=device)
         model.eval().to(device)
     except Exception as e:

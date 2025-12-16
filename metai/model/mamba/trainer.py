@@ -272,8 +272,9 @@ class MetMambaTrainer(l.LightningModule):
             # 同样可以在测试时记录 Score
             scores = self.val_scorer(y_pred_clamped, y, mask=mask_bool)
             
-        self.log('test_loss', loss, on_epoch=True)
-        self.log('test_score', scores['total_score'], on_epoch=True)
+        if self._trainer:
+            self.log('test_loss', loss, on_epoch=True)
+            self.log('test_score', scores['total_score'], on_epoch=True)
         
         return {
             'inputs': x[0].cpu().float().numpy(),
