@@ -5,15 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.fft
 
-# 尝试导入 torchmetrics，如果不存在则提供回退方案
-# 注：Lightning 通常会自动安装 torchmetrics
-try:
-    from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
-    TORCHMETRICS_AVAILABLE = True
-except ImportError:
-    TORCHMETRICS_AVAILABLE = False
-    print("Warning: torchmetrics not found. MS-SSIM loss will be skipped.")
-
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 
 class WeightedScoreSoftCSILoss(nn.Module):
     """
@@ -32,6 +24,7 @@ class WeightedScoreSoftCSILoss(nn.Module):
         thresholds_raw = [0.1, 1.0, 2.0, 5.0, 8.0]
         # 权重: 0.1, 0.1, 0.2, 0.25, 0.35 (越大的雨越重要)
         weights_raw    = [0.1, 0.1, 0.2, 0.25, 0.35]
+        # weights_raw    = [0.05, 0.05, 0.1, 0.3, 0.5]
         
         self.register_buffer('thresholds', torch.tensor(thresholds_raw) / self.MM_MAX)
         self.register_buffer('intensity_weights', torch.tensor(weights_raw))
@@ -168,8 +161,7 @@ class WeightedEvolutionLoss(nn.Module):
             if count_valid > 0:
                 weighted_loss = (diff_error * weight_map).sum() / count_valid
             else:
-                # [FIXED] 返回 Tensor 而不是 float，避免 .item() 报错
-                weighted_loss = torch.tensor(0.0, device=pred.device, dtype=pred.dtype)
+                weighted_loss = 0.0 
         else:
             weighted_loss = (diff_error * weight_map).mean()
 
@@ -199,7 +191,7 @@ class HybridLoss(nn.Module):
         # [关键] 必须使用 reduction='none' 才能支持后续的 Pixel-Wise 加权和 Masking
         self.l1 = nn.L1Loss(reduction='none') 
         
-        if TORCHMETRICS_AVAILABLE and ssim_weight > 0:
+        if ssim_weight > 0:
             self.ms_ssim = MultiScaleStructuralSimilarityIndexMeasure(data_range=1.0, reduction='none')
         else:
             self.ms_ssim = None
@@ -263,8 +255,6 @@ class HybridLoss(nn.Module):
             l1_loss = l1_loss_map.mean()
             
         total_loss += self.weights['l1'] * l1_loss
-        
-        # [FIXED] 增加类型检查，防止 .item() 报错
         loss_dict['l1'] = l1_loss.item() if isinstance(l1_loss, torch.Tensor) else l1_loss
         # =====================================================================
         
@@ -272,19 +262,19 @@ class HybridLoss(nn.Module):
         if self.weights['csi'] > 0:
             csi_loss = self.soft_csi(pred, target, mask)
             total_loss += self.weights['csi'] * csi_loss
-            loss_dict['csi'] = csi_loss.item() if isinstance(csi_loss, torch.Tensor) else csi_loss
+            loss_dict['csi'] = csi_loss.item()
             
         # 4. Spectral Loss (频域抗模糊)
         if self.weights['spec'] > 0:
             spec_loss = self.spectral(pred, target, mask)
             total_loss += self.weights['spec'] * spec_loss
-            loss_dict['spec'] = spec_loss.item() if isinstance(spec_loss, torch.Tensor) else spec_loss
+            loss_dict['spec'] = spec_loss.item()
             
         # 5. Evolution Loss (时序演变约束)
         if self.weights['evo'] > 0 and pred.shape[1] > 1:
             evo_loss = self.evolution(pred, target, mask)
             total_loss += self.weights['evo'] * evo_loss
-            loss_dict['evo'] = evo_loss.item() if isinstance(evo_loss, torch.Tensor) else evo_loss
+            loss_dict['evo'] = evo_loss.item()
             
         # 6. MS-SSIM Loss (结构一致性)
         if self.ms_ssim is not None and self.weights['ssim'] > 0:
@@ -301,7 +291,7 @@ class HybridLoss(nn.Module):
             ssim_val = self.ms_ssim(pred_c, target_c).mean()
             ssim_loss = 1.0 - ssim_val
             total_loss += self.weights['ssim'] * ssim_loss
-            loss_dict['ssim'] = ssim_loss.item() if isinstance(ssim_loss, torch.Tensor) else ssim_loss
+            loss_dict['ssim'] = ssim_loss.item()
         
         # 记录加权后的总 Loss
         loss_dict['total'] = total_loss.item() if isinstance(total_loss, torch.Tensor) else total_loss

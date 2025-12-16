@@ -41,7 +41,7 @@ case $MODE in
         --trainer.strategy ddp \
         --trainer.precision 16-mixed \
         --trainer.max_epochs 100 \
-        --trainer.log_every_n_steps 100 \
+        --trainer.log_every_n_steps 1000 \
         --trainer.accumulate_grad_batches 4 \
         --trainer.gradient_clip_val 0.5 \
         --trainer.gradient_clip_algorithm "norm" \
@@ -58,6 +58,8 @@ case $MODE in
         --trainer.callbacks.monitor "val_score" \
         --trainer.callbacks.mode "max" \
         --trainer.callbacks.patience 20 \
+        --trainer.callbacks+=lightning.pytorch.callbacks.TQDMProgressBar \
+        --trainer.callbacks.refresh_rate 100 \
         \
         --data.data_path "data/samples.jsonl" \
         --data.batch_size 1 \
@@ -112,9 +114,9 @@ case $MODE in
             --in_shape 10 54 256 256 \
             --out_seq_length 20 \
             --save_dir ./output/mamba \
-            --num_samples 10 \
+            --num_samples 2 \
             --accelerator cuda \
-            # --ckpt_path ./output/mamba/checkpoints/epoch=16-val_score=0.0488.ckpt
+            --ckpt_path ./output/mamba/checkpoints/last.ckpt
         ;;
         
     # ============================================================
@@ -130,7 +132,8 @@ case $MODE in
             --in_shape 20 54 256 256 \
             --save_dir ./output/mamba \
             --accelerator cuda \
-            --vis
+            --vis \
+            --ckpt_path ./output/mamba/checkpoints/last.ckpt
         ;;
        
 esac

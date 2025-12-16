@@ -31,15 +31,15 @@ class SimVPConfig(BaseModel):
         return (int(v[0]), int(v[1]), int(v[2]), int(v[3]))
 
     # [优化] 增加训练轮数以适配课程学习 Phase 3
-    max_epochs: int = Field(default=100, description="最大训练轮数")
+    max_epochs: int = Field(default=150, description="最大训练轮数")
 
     # 2. 数据加载器配置
     batch_size: int = Field(default=4, description="批大小 (单卡)")
     seed: int = Field(default=42, description="全局随机种子")
     num_workers: int = Field(default=4, description="DataLoader 工作线程数")
-    train_split: float = Field(default=0.85, description="训练集比例")
+    train_split: float = Field(default=0.8, description="训练集比例")
     val_split: float = Field(default=0.1, description="验证集比例")
-    test_split: float = Field(default=0.05, description="测试集比例")
+    test_split: float = Field(default=0.1, description="测试集比例")
     task_mode: str = Field(default='precipitation', description="任务模式")
 
     # 3. Trainer 配置
@@ -66,19 +66,19 @@ class SimVPConfig(BaseModel):
     N_S: int = Field(default=4, description="空间编码器层数")
     N_T: int = Field(default=12, description="时序转换器层数") # 增加层数以捕捉长时依赖
     model_type: str = Field(default='mamba', description="时序模块类型")
-    mlp_ratio: float = Field(default=4.0, description="MLP 扩展比例")
+    mlp_ratio: float = Field(default=8.0, description="MLP 扩展比例")
     drop: float = Field(default=0.0, description="Dropout 比率")
     drop_path: float = Field(default=0.1, description="Drop Path 比率")
-    spatio_kernel_enc: int = Field(default=5, description="编码器卷积核大小")
-    spatio_kernel_dec: int = Field(default=5, description="解码器卷积核大小")
+    spatio_kernel_enc: int = Field(default=3, description="编码器卷积核大小")
+    spatio_kernel_dec: int = Field(default=3, description="解码器卷积核大小")
     out_channels: int = Field(default=1, description="输出通道数")
 
     # 5. 损失函数配置
     loss_weight_l1: float = Field(default=1.0, description="L1 Loss 权重")
     loss_weight_ssim: float = Field(default=0.5, description="MS-SSIM 权重")
-    loss_weight_csi: float = Field(default=1.0, description="Soft-CSI 权重")
-    loss_weight_spectral: float = Field(default=0.05, description="Spectral 权重")
-    loss_weight_evo: float = Field(default=0.2, description="Evolution 权重")
+    loss_weight_csi: float = Field(default=2.0, description="Soft-CSI 权重")
+    loss_weight_spectral: float = Field(default=0.1, description="Spectral 权重")
+    loss_weight_evo: float = Field(default=2, description="Evolution 权重")
     
     # 6. 课程学习配置
     use_curriculum_learning: bool = Field(default=True, description="是否启用课程学习")
@@ -91,7 +91,7 @@ class SimVPConfig(BaseModel):
 
     # 8. 优化器与调度器
     opt: str = Field(default="adamw", description="优化器")
-    lr: float = Field(default=1e-4, description="初始学习率")
+    lr: float = Field(default=1e-3, description="初始学习率")
     weight_decay: float = Field(default=1e-2, description="权重衰减")
     filter_bias_and_bn: bool = Field(default=True, description="是否对 Bias 和 BN 层免除权重衰减")
     momentum: float = Field(default=0.9, description="SGD 动量")

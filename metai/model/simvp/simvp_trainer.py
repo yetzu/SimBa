@@ -140,6 +140,68 @@ class SimVP(l.LightningModule):
         # TensorBoard
         for k, v in weights.items():
             self.log(f"train/weight_{k}", v, on_epoch=True, sync_dist=True)
+
+#     def on_train_epoch_end(self):
+#         """后台非阻塞式测试"""
+#         if self.trainer.is_global_zero and self.auto_test_after_epoch:
+#             try:
+#                 if not self.test_script_path: return
+#                 script_path = str(self.test_script_path)
+#                 if not os.path.isabs(script_path):
+#                     current_file = os.path.abspath(__file__)
+#                     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
+#                     script_path = os.path.join(project_root, script_path)
+                
+#                 if not os.path.exists(script_path): return
+                
+#                 save_dir = None
+#                 if hasattr(self, 'hparams'):
+#                     save_dir = self.hparams.get('save_dir') if isinstance(self.hparams, dict) else getattr(self.hparams, 'save_dir', None)
+#                 if save_dir is None: save_dir = getattr(self.trainer, 'default_root_dir', os.getcwd())
+
+#                 script_dir = os.path.dirname(script_path) or os.getcwd()
+#                 log_dir = os.path.join(script_dir, 'test_logs')
+#                 os.makedirs(log_dir, exist_ok=True)
+                
+#                 epoch = self.current_epoch
+#                 log_file = os.path.join(log_dir, f'test_epoch_{epoch:03d}.log')
+                
+#                 # 构造后台执行代码
+#                 background_code = f"""
+# import os, time, glob, subprocess, sys
+# save_dir = r'{save_dir}'
+# script_path = r'{script_path}'
+# epoch = {epoch}
+# max_wait = 600
+
+# start_time = time.time()
+# found = False
+# while time.time() - start_time < max_wait:
+#     files = glob.glob(os.path.join(save_dir, "*.ckpt"))
+#     target = [f for f in files if f"epoch={{epoch:02d}}" in f]
+#     if target:
+#         size1 = os.path.getsize(target[0])
+#         time.sleep(2)
+#         if os.path.getsize(target[0]) == size1 and size1 > 0:
+#             found = True
+#             break
+#     time.sleep(5)
+
+# with open(r'{log_file}', 'w') as f:
+#     if found:
+#         f.write(f"[Background] Found checkpoint for Epoch {{epoch}}. Starting Test...\\n")
+#         f.flush()
+#         try:
+#             subprocess.run(['bash', script_path, 'test'], stdout=f, stderr=subprocess.STDOUT, cwd=r'{script_dir}')
+#         except Exception as e:
+#             f.write(f"\\n[Background Error] {{e}}\\n")
+#     else:
+#         f.write(f"[Background] Timeout waiting for checkpoint. Test Skipped.\\n")
+# """
+#                 subprocess.Popen([sys.executable, '-c', background_code], cwd=script_dir, start_new_session=True)
+                
+#             except Exception as e:
+#                 print(f"[ERROR] Failed to launch test script: {e}")
     
     def forward(self, x):
         return self.model(x)

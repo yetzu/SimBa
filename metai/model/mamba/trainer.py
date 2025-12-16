@@ -309,7 +309,8 @@ class MetMambaTrainer(l.LightningModule):
         # 计算混合 Loss
         loss, _ = self.criterion(y_pred, y, mask=mask)
         
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=False)
+
 
         return loss
     
