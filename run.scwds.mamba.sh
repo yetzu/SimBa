@@ -114,7 +114,7 @@ case $MODE in
             --in_shape 10 54 256 256 \
             --out_seq_length 20 \
             --save_dir ./output/mamba \
-            --num_samples 2 \
+            --num_samples 10 \
             --accelerator cuda \
             --ckpt_path ./output/mamba/checkpoints/last.ckpt
         ;;
