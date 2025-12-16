@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SimVP SCWDS 全流程脚本
-# 包含: Train (SimVP) -> Test (SimVP) -> Infer (SimVP)
+# 包含: Train (SimVP) -> Test (SimVP) -> Infer (SimVP) -> Infer (SimVP + Soft-GPM)
 # Usage: bash run.scwds.simvp.sh [MODE]
 
 # ================= 环境变量优化 =================
@@ -19,6 +19,7 @@ if [ $# -eq 0 ]; then
     echo " train      - 训练 SimVP 基座模型"
     echo " test       - 测试 SimVP 基座模型"
     echo " infer      - 使用 SimVP 基座进行推理"
+    echo " infer_gpm  - 使用 SimVP 基座 + Soft-GPM 后处理进行推理"
     exit 1
 fi
 
@@ -26,14 +27,14 @@ MODE=$1
 
 case $MODE in
     # ============================================================
-    # 1. 训练 SimVP 基座 (Stage 1) - [保持原样]
+    # 1. 训练 SimVP 基座 
     # ============================================================
     "train")
         echo "--------------------------------------------------------"
         echo "🚀 开始训练 Mamba 基座模型 (BF16 Mixed)..."
         echo "--------------------------------------------------------"
         
-        python run/train_scwds_simvp.py \
+        python run/simvp/train_scwds_simvp.py \
             --data_path data/samples.jsonl \
             --save_dir ./output/simvp \
             --batch_size 1 \
@@ -71,7 +72,7 @@ case $MODE in
             --precision bf16-mixed \
             --gradient_clip_val 5 \
             --gradient_clip_algorithm norm \
-            --ckpt_path ./output/simvp/last.ckpt
+            --ckpt_path ./output/simvp/best.ckpt
         ;;
         
     # ============================================================
@@ -82,15 +83,15 @@ case $MODE in
         echo "🧪 开始测试 Mamba 基座模型..."
         echo "----------------------------------------"
         
-        python run/test_scwds_simvp.py \
+        python run/simvp/test_scwds_simvp.py \
             --data_path data/samples.jsonl \
             --in_shape 10 54 256 256 \
             --aft_seq_length 20 \
             --save_dir ./output/simvp \
             --num_samples 10 \
-            --accelerator cpu
+            --accelerator cuda
         ;;
-        
+    
     # ============================================================
     # 3. 推理 SimVP 基座
     # ============================================================
@@ -99,11 +100,11 @@ case $MODE in
         echo "🔮 开始推理 Mamba 模型..."
         echo "----------------------------------------"
         
-        python run/infer_scwds_simvp.py \
+        python run/simvp/infer_scwds_simvp.py \
             --data_path data/samples.testset.jsonl \
             --in_shape 20 54 256 256 \
             --save_dir ./output/simvp \
-            --accelerator cuda:0 \
+            --accelerator cuda \
             --vis
         ;;
 
@@ -115,33 +116,16 @@ case $MODE in
         echo "🔮 开始推理 SimVP (Soft-GPM) 模型..."
         echo "----------------------------------------"
         
-        python run/infer_scwds_simvp_gpm.py \
+        python run/simvp/infer_scwds_simvp_gpm.py \
             --data_path data/samples.testset.jsonl \
             --in_shape 20 54 256 256 \
             --save_dir ./output/simvp \
-            --accelerator cuda:0 \
+            --accelerator cuda \
             --gpm_alpha 0.7 \
             --gpm_decay 0.9 \
             --vis
         ;;
-        
-    # ============================================================
-    # 5. 推理 SimVP 基座 + Soft-FBC 后处理
-    # ============================================================
-    "infer_fbc")
-        echo "----------------------------------------"
-        echo "🔮 开始推理 SimVP (Soft-FBC) 模型..."
-        echo "----------------------------------------"
-        
-        python run/infer_scwds_simvp_fbc.py \
-            --data_path data/samples.testset.jsonl \
-            --in_shape 20 54 256 256 \
-            --save_dir ./output/simvp \
-            --accelerator cuda:0 \
-            --fbc_alpha 0.5 \
-            --fbc_decay 0.9 \
-            --ref_frames 10
-        
+    
 esac
 
 echo "✅ 操作完成！"
