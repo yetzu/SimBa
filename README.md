@@ -11,7 +11,7 @@ conda activate metai
 
 conda install  gxx_linux-64 cuda-toolkit=12.1 -y
 conda install pytest pandas matplotlib scipy opencv PyYAML seaborn pydantic cartopy rasterio -y
-pip install torch torchvision torchaudio tensorboard timm pytorch-msssim lpips deepspeed
+pip install torch torchvision torchaudio tensorboard timm pytorch-msssim lpips deepspeed omegaconf
 pip install lightning lightning-utilities 
 pip install -U "jsonargparse[signatures]>=4.18.0"
 
